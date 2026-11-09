@@ -20,6 +20,8 @@ export default function AdminPage() {
   const [cardDescription,setCardDescription] = useState("");
   const [image,setImage] = useState(null);
   const [coverImages,setCoverImages] = useState({});
+  const [coverFeedback,setCoverFeedback] = useState("");
+  const [cardFeedback,setCardFeedback] = useState("");
   const [message,setMessage] = useState("");
   const [busy,setBusy] = useState(false);
 
@@ -56,20 +58,39 @@ export default function AdminPage() {
     if (error) setMessage(error.message); else { setMessage("تم إنشاء الصندوق بنجاح."); setTitle("");setSlug("");setDescription("");await refreshBoxes(); }
   }
   async function addCard(e) {
-    e.preventDefault(); if (!selected) return;
-    setBusy(true); setMessage("");
-    let imageUrl = null;
-    if (image) {
-      const ext = image.name.split(".").pop().toLowerCase();
-      const path = selected+"/"+crypto.randomUUID()+"."+ext;
-      const {error:uploadError} = await supabase.storage.from("card-images").upload(path,image,{upsert:false,contentType:image.type});
-      if (uploadError) { setBusy(false); setMessage(uploadError.message); return; }
-      const {data} = supabase.storage.from("card-images").getPublicUrl(path);
-      imageUrl = data.publicUrl;
+    e.preventDefault();
+    if (!selected) return;
+    setBusy(true);
+    setMessage("");
+    setCardFeedback(image ? "جارٍ رفع الصورة وإضافة البطاقة..." : "جارٍ إضافة البطاقة...");
+    try {
+      let imageUrl = null;
+      if (image) {
+        const ext = image.name.split(".").pop().toLowerCase();
+        const path = selected + "/" + crypto.randomUUID() + "." + ext;
+        const {error:uploadError} = await supabase.storage.from("card-images").upload(path,image,{upsert:false,contentType:image.type});
+        if (uploadError) {
+          setCardFeedback("تعذر رفع صورة البطاقة: " + uploadError.message);
+          return;
+        }
+        const {data} = supabase.storage.from("card-images").getPublicUrl(path);
+        imageUrl = data.publicUrl;
+      }
+      const {error} = await supabase.from("cards").insert({box_id:selected,title:cardTitle,description:cardDescription,image_url:imageUrl});
+      if (error) {
+        setCardFeedback("تم رفع الصورة لكن تعذر حفظ البطاقة: " + error.message);
+        return;
+      }
+      setCardFeedback(image ? "تمت إضافة البطاقة وصورتها بنجاح." : "تمت إضافة البطاقة بنجاح.");
+      setCardTitle("");
+      setCardDescription("");
+      setImage(null);
+      await refreshCards(selected);
+    } catch (error) {
+      setCardFeedback("توقف رفع الصورة أو حفظ البطاقة بسبب خطأ: " + (error?.message || "تعذر الاتصال بالخادم."));
+    } finally {
+      setBusy(false);
     }
-    const {error} = await supabase.from("cards").insert({box_id:selected,title:cardTitle,description:cardDescription,image_url:imageUrl});
-    setBusy(false);
-    if (error) setMessage(error.message); else { setMessage("تمت إضافة الكارت.");setCardTitle("");setCardDescription("");setImage(null);await refreshCards(selected); }
   }
   async function deleteCard(id) {
     if (!confirm("هل تريد حذف هذا الكارت؟")) return;
@@ -79,19 +100,30 @@ export default function AdminPage() {
   async function saveBoxCover(box) {
     const file = coverImages[box.id];
     if (!file) return;
-    setBusy(true); setMessage("");
-    const ext = file.name.split(".").pop().toLowerCase();
-    const path = box.id + "/" + crypto.randomUUID() + "." + ext;
-    const {error:uploadError} = await supabase.storage.from("card-images").upload(path,file,{upsert:false,contentType:file.type});
-    if (uploadError) { setBusy(false); setMessage(uploadError.message); return; }
-    const {data} = supabase.storage.from("card-images").getPublicUrl(path);
-    const {error} = await supabase.from("boxes").update({cover_image_url:data.publicUrl}).eq("id",box.id);
-    setBusy(false);
-    if (error) setMessage(error.message);
-    else {
-      setMessage("تم تحديث صورة الصندوق بنجاح.");
+    setBusy(true);
+    setMessage("");
+    setCoverFeedback("جارٍ رفع صورة الغلاف...");
+    try {
+      const ext = file.name.split(".").pop().toLowerCase();
+      const path = box.id + "/" + crypto.randomUUID() + "." + ext;
+      const {error:uploadError} = await supabase.storage.from("card-images").upload(path,file,{upsert:false,contentType:file.type});
+      if (uploadError) {
+        setCoverFeedback("تعذر رفع صورة الغلاف: " + uploadError.message);
+        return;
+      }
+      const {data} = supabase.storage.from("card-images").getPublicUrl(path);
+      const {error} = await supabase.from("boxes").update({cover_image_url:data.publicUrl}).eq("id",box.id);
+      if (error) {
+        setCoverFeedback("تم رفع الصورة لكن تعذر ربطها بالصندوق: " + error.message);
+        return;
+      }
+      setCoverFeedback("تم تحديث صورة الصندوق بنجاح.");
       setCoverImages(current => { const next = {...current}; delete next[box.id]; return next; });
       await refreshBoxes();
+    } catch (error) {
+      setCoverFeedback("توقف رفع صورة الغلاف بسبب خطأ: " + (error?.message || "تعذر الاتصال بالخادم."));
+    } finally {
+      setBusy(false);
     }
   }
   async function toggleBox(box) {
@@ -117,6 +149,7 @@ export default function AdminPage() {
     </section>
     <section className="panel admin-section">
       <h2>إدارة الصناديق</h2>
+      {coverFeedback && <div className="notice" role="status" aria-live="polite">{coverFeedback}</div>}
       {boxes.map(box=><div className="admin-item" key={box.id} style={{alignItems:"flex-start",flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:0}}>
           <strong>{box.title}</strong><div className="muted">/box/{box.slug} · {box.draw_mode==="shared"?"مشترك":"فردي"}</div>
@@ -140,6 +173,7 @@ export default function AdminPage() {
         <div className="field"><label>وصف اختياري</label><textarea value={cardDescription} onChange={e=>setCardDescription(e.target.value)}/></div>
         <div className="field"><label>صورة الكارت</label><input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>setImage(e.target.files?.[0]||null)}/></div>
         <button className="btn" disabled={busy||!selected}>إضافة الكارت</button>
+        {cardFeedback && <div className="notice" role="status" aria-live="polite">{cardFeedback}</div>}
       </form>
       <div className="admin-section"><h3>الكروت الحالية ({cards.length})</h3>
         {cards.map(card=><div className="admin-item" key={card.id}><div className="row">{card.image_url&&<img src={card.image_url} alt="" style={{width:48,height:60,objectFit:"cover",borderRadius:7}}/>}<div><strong>{card.title}</strong><div className="muted">{card.description}</div></div></div><button className="btn danger" onClick={()=>deleteCard(card.id)}>حذف</button></div>)}
