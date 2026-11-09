@@ -16,9 +16,8 @@ export default function AdminPage() {
   const [slug,setSlug] = useState("");
   const [description,setDescription] = useState("");
   const [mode,setMode] = useState("shared");
-  const [cardTitle,setCardTitle] = useState("");
-  const [cardDescription,setCardDescription] = useState("");
-  const [image,setImage] = useState(null);
+  const [cardDrafts,setCardDrafts] = useState([{id:1,title:"",description:"",image:null}]);
+  const [nextCardDraftId,setNextCardDraftId] = useState(2);
   const [coverImages,setCoverImages] = useState({});
   const [coverFeedback,setCoverFeedback] = useState("");
   const [cardFeedback,setCardFeedback] = useState("");
@@ -57,37 +56,58 @@ export default function AdminPage() {
     setBusy(false);
     if (error) setMessage(error.message); else { setMessage("تم إنشاء الصندوق بنجاح."); setTitle("");setSlug("");setDescription("");await refreshBoxes(); }
   }
+  function updateCardDraft(id,field,value) {
+    setCardDrafts(current => current.map(card => card.id===id ? {...card,[field]:value} : card));
+  }
+  function addCardDraft() {
+    setCardDrafts(current => [...current,{id:nextCardDraftId,title:"",description:"",image:null}]);
+    setNextCardDraftId(current => current+1);
+  }
+  function removeCardDraft(id) {
+    setCardDrafts(current => current.length===1 ? current : current.filter(card => card.id!==id));
+  }
   async function addCard(e) {
     e.preventDefault();
     if (!selected) return;
+    const cardsToCreate = cardDrafts.map(card => ({...card,title:card.title.trim(),description:card.description.trim()}));
+    if (cardsToCreate.some(card => !card.title)) {
+      setCardFeedback("أدخل عنوانًا لكل كارت، أو احذف الصف الفارغ.");
+      return;
+    }
     setBusy(true);
     setMessage("");
-    setCardFeedback(image ? "جارٍ رفع الصورة وإضافة البطاقة..." : "جارٍ إضافة البطاقة...");
+    setCardFeedback("جارٍ حفظ " + cardsToCreate.length + " كروت...");
     try {
-      let imageUrl = null;
-      if (image) {
-        const ext = image.name.split(".").pop().toLowerCase();
-        const path = selected + "/" + crypto.randomUUID() + "." + ext;
-        const {error:uploadError} = await supabase.storage.from("card-images").upload(path,image,{upsert:false,contentType:image.type});
-        if (uploadError) {
-          setCardFeedback("تعذر رفع صورة البطاقة: " + uploadError.message);
-          return;
+      const rows = [];
+      for (let index=0; index<cardsToCreate.length; index+=1) {
+        const card = cardsToCreate[index];
+        let imageUrl = null;
+        if (card.image) {
+          setCardFeedback("جارٍ رفع صورة الكارت " + (index+1) + " من " + cardsToCreate.length + "...");
+          const ext = card.image.name.split(".").pop().toLowerCase();
+          const path = selected + "/" + crypto.randomUUID() + "." + ext;
+          const {error:uploadError} = await supabase.storage.from("card-images").upload(path,card.image,{upsert:false,contentType:card.image.type});
+          if (uploadError) {
+            setCardFeedback("تعذر رفع صورة الكارت " + (index+1) + ": " + uploadError.message);
+            return;
+          }
+          const {data} = supabase.storage.from("card-images").getPublicUrl(path);
+          imageUrl = data.publicUrl;
         }
-        const {data} = supabase.storage.from("card-images").getPublicUrl(path);
-        imageUrl = data.publicUrl;
+        rows.push({box_id:selected,title:card.title,description:card.description,image_url:imageUrl});
       }
-      const {error} = await supabase.from("cards").insert({box_id:selected,title:cardTitle,description:cardDescription,image_url:imageUrl});
+      setCardFeedback("تم رفع الصور، جارٍ حفظ الكروت...");
+      const {error} = await supabase.from("cards").insert(rows);
       if (error) {
-        setCardFeedback("تم رفع الصورة لكن تعذر حفظ البطاقة: " + error.message);
+        setCardFeedback("تعذر حفظ الكروت: " + error.message);
         return;
       }
-      setCardFeedback(image ? "تمت إضافة البطاقة وصورتها بنجاح." : "تمت إضافة البطاقة بنجاح.");
-      setCardTitle("");
-      setCardDescription("");
-      setImage(null);
+      setCardFeedback("تمت إضافة " + cardsToCreate.length + " كروت بنجاح.");
+      setCardDrafts([{id:nextCardDraftId,title:"",description:"",image:null}]);
+      setNextCardDraftId(current => current+1);
       await refreshCards(selected);
     } catch (error) {
-      setCardFeedback("توقف رفع الصورة أو حفظ البطاقة بسبب خطأ: " + (error?.message || "تعذر الاتصال بالخادم."));
+      setCardFeedback("توقف رفع الصور أو حفظ الكروت بسبب خطأ: " + (error?.message || "تعذر الاتصال بالخادم."));
     } finally {
       setBusy(false);
     }
@@ -166,13 +186,25 @@ export default function AdminPage() {
       </div>)}
     </section>
     <section className="panel admin-section">
-      <h2>إضافة كارت إلى صندوق</h2>
+      <h2>إضافة كروت إلى صندوق</h2>
       <form className="form" onSubmit={addCard}>
         <div className="field"><label>اختر الصندوق</label><select value={selected} onChange={e=>setSelected(e.target.value)} required><option value="">اختر صندوقًا</option>{boxes.map(b=><option key={b.id} value={b.id}>{b.title}</option>)}</select></div>
-        <div className="field"><label>عنوان الكارت</label><input required value={cardTitle} onChange={e=>setCardTitle(e.target.value)} placeholder="اسم الفيلم أو الكتاب"/></div>
-        <div className="field"><label>وصف اختياري</label><textarea value={cardDescription} onChange={e=>setCardDescription(e.target.value)}/></div>
-        <div className="field"><label>صورة الكارت</label><input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>setImage(e.target.files?.[0]||null)}/></div>
-        <button className="btn" disabled={busy||!selected}>إضافة الكارت</button>
+        <p className="muted" style={{margin:0}}>أضف كرتًا أو أكثر. يمكنك إرفاق صورة اختيارية بكل كرت.</p>
+        {cardDrafts.map((card,index)=><div className="panel" key={card.id} style={{padding:16}}>
+          <div className="row" style={{justifyContent:"space-between",marginBottom:10}}>
+            <strong>الكارت {index+1}</strong>
+            {cardDrafts.length>1&&<button type="button" className="btn ghost" onClick={()=>removeCardDraft(card.id)}>حذف هذا الكارت</button>}
+          </div>
+          <div className="form">
+            <div className="field"><label htmlFor={"card-title-"+card.id}>عنوان الكارت</label><input id={"card-title-"+card.id} required value={card.title} onChange={e=>updateCardDraft(card.id,"title",e.target.value)} placeholder="اسم الفيلم أو الكتاب"/></div>
+            <div className="field"><label htmlFor={"card-description-"+card.id}>وصف اختياري</label><textarea id={"card-description-"+card.id} value={card.description} onChange={e=>updateCardDraft(card.id,"description",e.target.value)}/></div>
+            <div className="field"><label htmlFor={"card-image-"+card.id}>صورة الكارت (اختيارية)</label><input id={"card-image-"+card.id} type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>updateCardDraft(card.id,"image",e.target.files?.[0]||null)}/></div>
+          </div>
+        </div>)}
+        <div className="row">
+          <button type="button" className="btn secondary" onClick={addCardDraft} disabled={busy}>+ إضافة كارت آخر</button>
+          <button className="btn" disabled={busy||!selected}>{busy?"جارٍ الحفظ...":"حفظ الكروت ("+cardDrafts.length+")"}</button>
+        </div>
         {cardFeedback && <div className="notice" role="status" aria-live="polite">{cardFeedback}</div>}
       </form>
       <div className="admin-section"><h3>الكروت الحالية ({cards.length})</h3>
