@@ -80,7 +80,7 @@ export default function BoxGamePage() {
 
   return <main className="shell">
     <header className="topbar"><Link href="/" className="brand">✦ صندوق الحظ</Link><Link href="/">كل الصناديق</Link></header>
-    <section className="hero"><div className="eyebrow">YOUR RANDOM MOMENT</div><h1>{box.title}</h1><p className="subtitle">{box.description || "اسحب كارتًا واكتشف مفاجأتك."}</p></section>
+    <section className="hero box-page-hero">{box.cover_image_url && <div className="box-page-cover"><img src={box.cover_image_url} alt={"غلاف "+box.title}/></div>}<div className="eyebrow">YOUR RANDOM MOMENT</div><h1>{box.title}</h1><p className="subtitle">{box.description || "اسحب كارتًا واكتشف مفاجأتك."}</p></section>
     <section className="panel game">
       <div className="stats"><span className="stat">المتبقي: {remaining}</span><span className="stat">تم سحبه: {drawn.length}</span><span className="stat">{box.draw_mode==="shared"?"سحب مشترك":"سحب فردي"}</span></div>
       <div className="chest-stage"><div className={"chest"+(opening?" opening":"")}>🎁</div></div>
