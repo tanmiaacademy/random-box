@@ -19,6 +19,7 @@ export default function AdminPage() {
   const [cardTitle,setCardTitle] = useState("");
   const [cardDescription,setCardDescription] = useState("");
   const [image,setImage] = useState(null);
+  const [coverImages,setCoverImages] = useState({});
   const [message,setMessage] = useState("");
   const [busy,setBusy] = useState(false);
 
@@ -75,6 +76,24 @@ export default function AdminPage() {
     const {error} = await supabase.from("cards").delete().eq("id",id);
     if (error) setMessage(error.message); else refreshCards(selected);
   }
+  async function saveBoxCover(box) {
+    const file = coverImages[box.id];
+    if (!file) return;
+    setBusy(true); setMessage("");
+    const ext = file.name.split(".").pop().toLowerCase();
+    const path = box.id + "/covers/" + crypto.randomUUID() + "." + ext;
+    const {error:uploadError} = await supabase.storage.from("card-images").upload(path,file,{upsert:false,contentType:file.type});
+    if (uploadError) { setBusy(false); setMessage(uploadError.message); return; }
+    const {data} = supabase.storage.from("card-images").getPublicUrl(path);
+    const {error} = await supabase.from("boxes").update({cover_image_url:data.publicUrl}).eq("id",box.id);
+    setBusy(false);
+    if (error) setMessage(error.message);
+    else {
+      setMessage("تم تحديث صورة الصندوق بنجاح.");
+      setCoverImages(current => { const next = {...current}; delete next[box.id]; return next; });
+      await refreshBoxes();
+    }
+  }
   async function toggleBox(box) {
     const {error} = await supabase.from("boxes").update({is_active:!box.is_active}).eq("id",box.id);
     if (error) setMessage(error.message); else refreshBoxes();
@@ -98,7 +117,20 @@ export default function AdminPage() {
     </section>
     <section className="panel admin-section">
       <h2>إدارة الصناديق</h2>
-      {boxes.map(box=><div className="admin-item" key={box.id}><div><strong>{box.title}</strong><div className="muted">/box/{box.slug} · {box.draw_mode==="shared"?"مشترك":"فردي"}</div></div><div className="row"><Link className="btn secondary" href={"/box/"+box.slug}>معاينة</Link><button className="btn ghost" onClick={()=>toggleBox(box)}>{box.is_active?"إيقاف":"تفعيل"}</button></div></div>)}
+      {boxes.map(box=><div className="admin-item" key={box.id} style={{alignItems:"flex-start"}}>
+        <div style={{flex:1,minWidth:0}}>
+          <strong>{box.title}</strong><div className="muted">/box/{box.slug} · {box.draw_mode==="shared"?"مشترك":"فردي"}</div>
+          <div className="row" style={{marginTop:10}}>
+            {box.cover_image_url&&<img src={box.cover_image_url} alt={"صورة "+box.title} style={{width:64,height:64,objectFit:"cover",borderRadius:10,border:"1px solid #ffffff25"}}/>}
+            <div className="field" style={{minWidth:210}}>
+              <label htmlFor={"cover-"+box.id}>صورة غلاف الصندوق</label>
+              <input id={"cover-"+box.id} type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>setCoverImages(current=>({...current,[box.id]:e.target.files?.[0]||null}))}/>
+            </div>
+            <button className="btn secondary" onClick={()=>saveBoxCover(box)} disabled={busy||!coverImages[box.id]}>حفظ الصورة</button>
+          </div>
+        </div>
+        <div className="row"><Link className="btn secondary" href={"/box/"+box.slug}>معاينة</Link><button className="btn ghost" onClick={()=>toggleBox(box)}>{box.is_active?"إيقاف":"تفعيل"}</button></div>
+      </div>)}
     </section>
     <section className="panel admin-section">
       <h2>إضافة كارت إلى صندوق</h2>
