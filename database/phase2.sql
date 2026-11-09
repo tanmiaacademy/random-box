@@ -7,7 +7,8 @@ create policy "Public view active box draws"
 on public.draws for select
 to anon, authenticated
 using (
-  exists (
+  participant_id is null
+  and exists (
     select 1
     from public.rounds r
     join public.boxes b on b.id = r.box_id
