@@ -81,7 +81,7 @@ export default function AdminPage() {
     if (!file) return;
     setBusy(true); setMessage("");
     const ext = file.name.split(".").pop().toLowerCase();
-    const path = box.id + "/covers/" + crypto.randomUUID() + "." + ext;
+    const path = box.id + "/" + crypto.randomUUID() + "." + ext;
     const {error:uploadError} = await supabase.storage.from("card-images").upload(path,file,{upsert:false,contentType:file.type});
     if (uploadError) { setBusy(false); setMessage(uploadError.message); return; }
     const {data} = supabase.storage.from("card-images").getPublicUrl(path);
@@ -117,7 +117,7 @@ export default function AdminPage() {
     </section>
     <section className="panel admin-section">
       <h2>إدارة الصناديق</h2>
-      {boxes.map(box=><div className="admin-item" key={box.id} style={{alignItems:"flex-start"}}>
+      {boxes.map(box=><div className="admin-item" key={box.id} style={{alignItems:"flex-start",flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:0}}>
           <strong>{box.title}</strong><div className="muted">/box/{box.slug} · {box.draw_mode==="shared"?"مشترك":"فردي"}</div>
           <div className="row" style={{marginTop:10}}>
