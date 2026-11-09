@@ -30,8 +30,8 @@ export default function Home() {
 
     <section className="hero home-hero">
       <div className="eyebrow">RANDOM BOX EXPERIENCE</div>
-      <h1>افتح الصندوق،<br /><span className="gold">واكتشف مفاجأتك!</span></h1>
-      <p className="subtitle">كل صندوق يحمل تجربة مختلفة. اختر صندوقك، اسحب كارتك، ودع المفاجأة تبدأ!</p>
+      <h1>بوكسات السعادة</h1>
+      <p className="subtitle">كل بوكس يحمل تجربة مختلفة. اختر بوكسك، اسحب كارتك، واترك نفسك للمفاجأة!</p>
       <div className="home-hero-accent" aria-hidden="true"><span>✦</span><i></i><span>✧</span></div>
     </section>
 
