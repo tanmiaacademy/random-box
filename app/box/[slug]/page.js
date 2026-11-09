@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
 
@@ -16,6 +16,80 @@ export default function BoxGamePage() {
   const [opening,setOpening] = useState(false);
   const [error,setError] = useState("");
   const [participantKey,setParticipantKey] = useState(null);
+  const [soundEnabled,setSoundEnabled] = useState(true);
+  const audioContextRef = useRef(null);
+
+  useEffect(()=>{
+    const saved = window.localStorage.getItem("rb-sound");
+    if (saved !== null) setSoundEnabled(saved === "on");
+  },[]);
+
+  function toggleSound() {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    window.localStorage.setItem("rb-sound",next?"on":"off");
+    if (next) playSound("flip");
+  }
+
+  function playSound(kind) {
+    if (!soundEnabled || typeof window === "undefined") return;
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      const context = audioContextRef.current || new AudioContextClass();
+      audioContextRef.current = context;
+      if (context.state === "suspended") context.resume();
+
+      const noiseAt = (start, duration, volume, cutoff) => {
+        const length = Math.max(1,Math.floor(context.sampleRate*duration));
+        const buffer = context.createBuffer(1,length,context.sampleRate);
+        const samples = buffer.getChannelData(0);
+        for (let i=0;i<length;i+=1) samples[i] = Math.random()*2-1;
+        const source = context.createBufferSource();
+        const filter = context.createBiquadFilter();
+        const gain = context.createGain();
+        source.buffer = buffer;
+        filter.type = "highpass";
+        filter.frequency.setValueAtTime(cutoff,start);
+        gain.gain.setValueAtTime(0.0001,start);
+        gain.gain.exponentialRampToValueAtTime(volume,start+0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001,start+duration);
+        source.connect(filter);
+        filter.connect(gain);
+        gain.connect(context.destination);
+        source.start(start);
+        source.stop(start+duration);
+      };
+      const toneAt = (frequency,endFrequency,start,duration,volume) => {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(frequency,start);
+        oscillator.frequency.exponentialRampToValueAtTime(endFrequency,start+duration);
+        gain.gain.setValueAtTime(0.0001,start);
+        gain.gain.exponentialRampToValueAtTime(volume,start+0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001,start+duration);
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start(start);
+        oscillator.stop(start+duration);
+      };
+
+      const now = context.currentTime;
+      if (kind === "shuffle") {
+        for (let i=0;i<6;i+=1) noiseAt(now+i*0.085,0.11,0.045,850+i*90);
+        toneAt(480,720,now+0.48,0.22,0.035);
+      } else if (kind === "draw") {
+        noiseAt(now,0.16,0.05,1050);
+        noiseAt(now+0.18,0.13,0.04,1500);
+      } else {
+        noiseAt(now,0.09,0.045,1800);
+        toneAt(760,460,now+0.025,0.15,0.035);
+      }
+    } catch {
+      // Audio is optional; playback must never interrupt a draw.
+    }
+  }
 
   const load = useCallback(async () => {
     if (!supabase || !slug) return;
@@ -56,12 +130,14 @@ export default function BoxGamePage() {
   async function draw() {
     if (busy || remaining<=0) return;
     setBusy(true); setError(""); setResult(null); setOpening(true);
+    playSound("draw");
     await new Promise(resolve=>setTimeout(resolve,850));
     const {data,error} = await supabase.rpc("draw_card",{p_slug:slug,p_participant_key:box.draw_mode==="individual"?participantKey:null});
     setOpening(false); setBusy(false);
     if (error) {setError(error.message);return;}
     if (!data || data.length===0) {setRemaining(0);return;}
     const card = data[0];
+    playSound("flip");
     setResult(card); setRemaining(card.remaining_count);
     await refreshHistory();
   }
@@ -72,6 +148,7 @@ export default function BoxGamePage() {
     const {error} = await supabase.rpc("reset_box_round",{p_slug:slug,p_participant_key:box.draw_mode==="individual"?participantKey:null});
     setBusy(false);
     if (error) {setError(error.message);return;}
+    playSound("shuffle");
     setResult(null); setDrawn([]); setRemaining(cards.length); setError("");
   }
 
@@ -82,7 +159,7 @@ export default function BoxGamePage() {
     <header className="topbar"><Link href="/" className="brand">✦ صندوق الحظ</Link><Link href="/">كل الصناديق</Link></header>
     <section className="hero box-page-hero">{box.cover_image_url && <div className="box-page-cover"><img src={box.cover_image_url} alt={"غلاف "+box.title}/></div>}<div className="eyebrow">YOUR RANDOM MOMENT</div><h1>{box.title}</h1><p className="subtitle">{box.description || "اسحب كارتًا واكتشف مفاجأتك."}</p></section>
     <section className="panel game">
-      <div className="stats"><span className="stat">المتبقي: {remaining}</span><span className="stat">تم سحبه: {drawn.length}</span><span className="stat">{box.draw_mode==="shared"?"سحب مشترك":"سحب فردي"}</span></div>
+      <div className="stats"><span className="stat">المتبقي: {remaining}</span><span className="stat">تم سحبه: {drawn.length}</span><span className="stat">{box.draw_mode==="shared"?"سحب مشترك":"سحب فردي"}</span><button type="button" className="btn secondary sound-toggle" onClick={toggleSound} aria-pressed={soundEnabled}>{soundEnabled?"🔊 كتم الصوت":"🔇 تشغيل الصوت"}</button></div>
       <div className="chest-stage"><div className={"chest"+(opening?" opening":"")}>🎁</div></div>
       <div className="actions"><button className="btn" onClick={draw} disabled={busy||remaining===0}>{busy?"يفتح الصندوق...":"اسحب كارتك"}</button></div>
       {error && <div className="notice error">{error}</div>}
